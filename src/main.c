@@ -1,4 +1,5 @@
 #include <grammars/cyk.h>
+#include <grammars/earley.h>
 #include <grammars/grammar.h>
 #include <grammars/grammar_parse.h>
 
@@ -6,6 +7,9 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
+
+typedef enum { ALGORITHM_CYK, ALGORITHM_EARLEY } Algorithm;
 
 static const size_t MAX_WORDS             = 100000;
 static const size_t MAX_TOTAL_WORD_LENGTH = 10000000;
@@ -30,31 +34,59 @@ static void print_input_error(InputResult result, size_t line) {
 }
 
 int main(int argc, char **argv) {
-	if (argc != 1) {
-		fprintf(stderr, "usage: %s < input.txt\n", argv[0]);
+	Algorithm algorithm = ALGORITHM_CYK;
+
+	if (argc > 2) {
+		fprintf(stderr, "usage: %s [--cyk|--earley] < input.txt\n", argv[0]);
 		return 1;
 	}
 
-	Grammar            grammar = {0};
-	GrammarParseError  error   = {0};
+	if (argc == 2) {
+		if (strcmp(argv[1], "--earley") == 0) {
+			algorithm = ALGORITHM_EARLEY;
+		} else if (strcmp(argv[1], "--cyk") != 0) {
+			fprintf(stderr, "usage: %s [--cyk|--earley] < input.txt\n", argv[0]);
+			return 1;
+		}
+	}
 
-	GrammarParseResult parse = grammar_read(&grammar, stdin, &error);
-	if (parse != GRAMMAR_PARSE_OK) {
+	Grammar grammar         = {0};
+	GrammarParseError error = {0};
+	if (grammar_read(&grammar, stdin, &error) != GRAMMAR_PARSE_OK) {
 		fprintf(stderr, "grammar error at line %zu: %s\n", error.line, error.message);
+		grammar_free(&grammar);
 		return 1;
 	}
 
-	/* header, two symbol lines, all rules, the start line */
 	size_t grammar_lines = grammar.rules_count + 4;
 
-	Cyk       cyk    = {0};
-	CykResult fitted = cyk_fit(&cyk, &grammar);
-	grammar_free(&grammar);
+	Cyk    cyk    = {0};
+	Earley earley = {0};
+	int fit_ok;
 
-	if (fitted != CYK_OK) {
-		fprintf(stderr, "failed to prepare grammar: %s\n",
-		        fitted == CYK_ERR_MEMORY ? "out of memory" : "invalid grammar");
-		cyk_free(&cyk);
+	if (algorithm == ALGORITHM_CYK) {
+		CykResult result = cyk_fit(&cyk, &grammar);
+		fit_ok = result == CYK_OK;
+		if (!fit_ok) {
+			fprintf(stderr, "failed to prepare CYK: %s\n", result == CYK_ERR_MEMORY
+			                ? "out of memory"
+			                : "invalid grammar");
+		}
+	} else {
+		EarleyResult result = earley_fit(&earley, &grammar);
+		fit_ok = result == EARLEY_OK;
+		if (!fit_ok) {
+			fprintf(stderr, "failed to prepare Earley: %s\n",
+			                result == EARLEY_ERR_MEMORY
+			                ? "out of memory"
+			                : "invalid grammar");
+		}
+	}
+
+	grammar_free(&grammar);
+	if (!fit_ok) {
+		cyk_free   (&cyk);
+		earley_free(&earley);
 		return 1;
 	}
 
@@ -90,11 +122,26 @@ int main(int argc, char **argv) {
 		total_length += input.length;
 
 		int accepts = 0;
-		CykResult result = cyk_predict(&cyk, input.line, input.length, &accepts);
-		if (result != CYK_OK) {
-			fprintf(stderr, "word %zu: %s\n", i + 1,
-			        result == CYK_ERR_MEMORY ? "out of memory" : "undeclared terminal");
-			goto fail;
+		int memory_error;
+
+		if (algorithm == ALGORITHM_CYK) {
+			CykResult result = cyk_predict(&cyk, input.line, input.length, &accepts);
+			memory_error = result == CYK_ERR_MEMORY;
+			if (result != CYK_OK) {
+				fprintf(stderr, "word %zu: %s\n", i + 1, memory_error
+				                ? "out of memory"
+				                : "undeclared terminal");
+				goto fail;
+			}
+		} else {
+			EarleyResult result = earley_predict(&earley, input.line, input.length, &accepts);
+			memory_error = result == EARLEY_ERR_MEMORY;
+			if (result != EARLEY_OK) {
+				fprintf(stderr, "word %zu: %s\n", i + 1, memory_error
+				                ? "out of memory"
+				                : "undeclared terminal");
+				goto fail;
+			}
 		}
 
 		if (puts(accepts ? "Yes" : "No") == EOF) {
@@ -113,12 +160,14 @@ int main(int argc, char **argv) {
 		goto fail;
 	}
 
-	input_free(&input);
-	cyk_free  (&cyk);
+	input_free (&input);
+	cyk_free   (&cyk);
+	earley_free(&earley);
 	return 0;
 
 fail:
-	input_free(&input);
-	cyk_free  (&cyk);
+	input_free (&input);
+	cyk_free   (&cyk);
+	earley_free(&earley);
 	return 1;
 }

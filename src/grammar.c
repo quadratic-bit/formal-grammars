@@ -224,6 +224,70 @@ GrammarResult grammar_add_rule(Grammar *grammar, char lhs, const char *rhs) {
 	return GRAMMAR_OK;
 }
 
+static void *grammar_copy_array(const void *source, size_t count, size_t size) {
+	if (count == 0 || count > SIZE_MAX / size) {
+		return NULL;
+	}
+
+	void *copy = malloc(count * size);
+	if (copy != NULL) {
+		memcpy(copy, source, count * size);
+	}
+
+	return copy;
+}
+
+GrammarResult grammar_clone(Grammar *dest, const Grammar *source) {
+	assert(dest   != NULL);
+	assert(source != NULL);
+	assert(dest   != source);
+
+	assert(dest->nonterminals == NULL);
+	assert(dest->terminals    == NULL);
+	assert(dest->rules        == NULL);
+	assert(dest->rhs          == NULL);
+
+	if (!source->has_start || source->nonterminals_count == 0 ||
+	    source->start >= source->nonterminals_count
+	) {
+		return GRAMMAR_ERR_INVALID;
+	}
+
+	Grammar copy = {
+		.nonterminals_count = source->nonterminals_count,
+		.nonterminals_cap   = source->nonterminals_count,
+		.terminals_count    = source->terminals_count,
+		.terminals_cap      = source->terminals_count,
+		.rules_count        = source->rules_count,
+		.rules_cap          = source->rules_count,
+		.rhs_count          = source->rhs_count,
+		.rhs_cap            = source->rhs_count,
+		.start              = source->start,
+		.has_start          = source->has_start,
+	};
+
+	copy.nonterminals = grammar_copy_array(source->nonterminals, copy.nonterminals_count,
+	                                       sizeof *copy.nonterminals);
+
+	copy.terminals = grammar_copy_array(source->terminals, copy.terminals_count,
+	                                    sizeof *copy.terminals);
+
+	copy.rules = grammar_copy_array(source->rules, copy.rules_count, sizeof *copy.rules);
+	copy.rhs   = grammar_copy_array(source->rhs,   copy.rhs_count,   sizeof *copy.rhs);
+
+	if ((copy.nonterminals_count != 0 && copy.nonterminals == NULL) ||
+	    (copy.terminals_count    != 0 && copy.terminals    == NULL) ||
+	    (copy.rules_count        != 0 && copy.rules        == NULL) ||
+	    (copy.rhs_count          != 0 && copy.rhs          == NULL))
+	{
+		grammar_free(&copy);
+		return GRAMMAR_ERR_MEMORY;
+	}
+
+	*dest = copy;
+	return GRAMMAR_OK;
+}
+
 void grammar_free(Grammar *grammar) {
 	assert(grammar != NULL);
 

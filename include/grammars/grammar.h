@@ -47,6 +47,8 @@ GrammarResult grammar_set_start      (Grammar *grammar, char name);
 
 GrammarResult grammar_add_rule(Grammar *grammar, char lhs, const char *rhs);
 
+GrammarResult grammar_clone(Grammar *dest, const Grammar *source);
+
 void grammar_free(Grammar *grammar);
 
 #endif

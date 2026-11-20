@@ -27,7 +27,7 @@ HDR := \
 	$(wildcard src/*.h) \
 	$(wildcard tests/helpers/*.h)
 
-ALGO_SRC := src/cnf.c src/cyk.c
+ALGO_SRC := src/cnf.c src/cyk.c src/earley.c
 
 .PHONY: all release test coverage coverage-show coverage-html clean
 
